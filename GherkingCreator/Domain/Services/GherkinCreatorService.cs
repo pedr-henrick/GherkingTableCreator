@@ -1,50 +1,106 @@
-﻿using System.Linq;
+﻿using System.Data;
+using System.Text;
 using System.Text.Json;
 
 namespace GherkinCreator.Domain.Services
 {
     public static class GherkinCreatorService
     {
-        //private static List<dynamic> GherkinList = new();
-
+        private static List<Dictionary<string, JsonElement>> DictionariesList = new();
         public static string CreateGherkin(dynamic jsonFromTransform)
         {
             var stringJson = JsonSerializer.Serialize(jsonFromTransform);
-            Dictionary<string, JsonElement> json = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(stringJson);
-            return WriteGherkin(json);
+            
+            if (jsonFromTransform.ValueKind is JsonValueKind.Array)
+            {   
+                var jsonsArray = JsonSerializer.Deserialize<JsonElement[]>(stringJson);
+                foreach (var json in jsonsArray)
+                {
+                    DictionariesList.Add(JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json));
+                }
+            } else
+            {
+                DictionariesList.Add(JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonFromTransform));
+            }
+
+            List<Dictionary<string, JsonElement>> removedDictionariesList = new();
+            List<Dictionary<string, JsonElement>> addedDictionariesList = new();
+
+            foreach (var dictionary in DictionariesList)
+            {
+                var ordedDictionary = WriteGherkin(dictionary);
+                addedDictionariesList.Add(ordedDictionary);
+                removedDictionariesList.Add(dictionary);
+            }
+
+            foreach (var dictionary in removedDictionariesList)
+            {
+                DictionariesList.Remove(dictionary);
+            }
+
+            foreach (var dictionary in addedDictionariesList)
+            {
+                DictionariesList.Add(dictionary);
+            }
+
+            var tableBuilder = new StringBuilder();
+
+            tableBuilder.Append("| ");
+            foreach (var key in DictionariesList[0].Keys)
+            {
+                tableBuilder.Append($"{key} | ");
+            }
+            tableBuilder.AppendLine();
+
+            tableBuilder.Append("| ");
+            foreach (var kvp in DictionariesList)
+            {
+                foreach (var value in kvp.Values)
+                {
+                    tableBuilder.Append($"{value} | ");
+                }
+                tableBuilder.AppendLine();
+            }
+
+            return tableBuilder.ToString();
         }
 
-        private static string WriteGherkin(Dictionary<string, JsonElement> json)
+        private static Dictionary<string, JsonElement> WriteGherkin(Dictionary<string, JsonElement> dictionary)
         {
             var i = 0;
-            while (i < json.Count)
+            while (i < dictionary.Count)
             {
-                foreach (var element in json.ToList())
+                foreach (var element in dictionary.ToList())
                 {
                     if (element.Value.ValueKind == JsonValueKind.Array)
                     {
-                        var jsonKeyValuePairAdd = BreakArray(json, element);
+                        var jsonKeyValuePairAdd = BreakArray(element);
 
-                        json.Remove(element.Key);
+                        dictionary.Remove(element.Key);
                         foreach (var item in jsonKeyValuePairAdd)
-                            json.Add(item.Key, item.Value);
+                        {
+                            var keyValue = item.Key.Replace(".", "_").Replace(item.Key[0], char.ToUpper(item.Key[0]));
+                            dictionary.Add(keyValue, item.Value);
+                        }
                     }
                     else if (element.Value.ValueKind == JsonValueKind.Object)
                     {
                         var jsonKeyValuePairAdd = BreakObject(element.Key, element: element);
 
-                        json.Remove(element.Key);
+                        dictionary.Remove(element.Key);
                         foreach (var item in jsonKeyValuePairAdd)
-                            json.Add(item.Key, item.Value);
+                        {
+                            var keyValue = item.Key.Replace(".", "_").Replace(item.Key[0], char.ToUpper(item.Key[0]));
+                            dictionary.Add(keyValue, item.Value);
+                        }
                     }
                 }
                 i++;
             }
-            var dicionarioOrdenado = json.OrderBy(x => x.Key).ToDictionary(x => x.Key, x => x.Value);
-            return JsonSerializer.Serialize(dicionarioOrdenado);
+            return dictionary.OrderBy(x => x.Key).ToDictionary(x => x.Key, x => x.Value);
         }
 
-        private static Dictionary<string, JsonElement> BreakArray(Dictionary<string, JsonElement> json, KeyValuePair<string, JsonElement> element)
+        private static Dictionary<string, JsonElement> BreakArray(KeyValuePair<string, JsonElement> element)
         {
             var jsonKeyValuePairAdd = new Dictionary<string, JsonElement>();
             var valuesList = element.Value.EnumerateArray();
@@ -52,11 +108,11 @@ namespace GherkinCreator.Domain.Services
 
             foreach (var itemList in valuesList)
             {
-                var BrokenElements = BreakObject(element.Key+positionIndex, jsonElement: itemList);
-                
+                var BrokenElements = BreakObject(element.Key + positionIndex, jsonElement: itemList);
+
                 foreach (var item in BrokenElements)
                     jsonKeyValuePairAdd.Add(item.Key, item.Value);
-                
+
                 positionIndex++;
             }
             return jsonKeyValuePairAdd;
@@ -65,12 +121,16 @@ namespace GherkinCreator.Domain.Services
         private static Dictionary<string, JsonElement> BreakObject(string elementUpper, KeyValuePair<string, JsonElement>? element = null, JsonElement? jsonElement = null)
         {
             var jsonKeyValuePairAdd = new Dictionary<string, JsonElement>();
-            Dictionary<string, JsonElement> valuesList =  jsonElement != null
+            Dictionary<string, JsonElement> valuesList = jsonElement != null
                     ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonElement.Value.GetRawText())
                     : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(element.Value.Value.GetRawText());
 
+            var upperCaseElement = elementUpper.Replace(".", "_").Replace(elementUpper[0], char.ToUpper(elementUpper[0]));
             foreach (var item in valuesList)
-                jsonKeyValuePairAdd.Add($"{elementUpper}.{item.Key}", item.Value);
+            {
+                var keyValue =  item.Key.Replace(".", "_").Replace(item.Key[0], char.ToUpper(item.Key[0]));
+                jsonKeyValuePairAdd.Add($"{upperCaseElement}.{keyValue}", item.Value);
+            }
 
             return jsonKeyValuePairAdd;
         }
