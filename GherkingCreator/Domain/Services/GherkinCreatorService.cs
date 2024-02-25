@@ -52,9 +52,9 @@ namespace GherkinCreator.Domain.Services
             }
             tableBuilder.AppendLine();
 
-            tableBuilder.Append("| ");
             foreach (var kvp in DictionariesList)
             {
+                tableBuilder.Append("| ");
                 foreach (var value in kvp.Values)
                 {
                     tableBuilder.Append($"{value} | ");
